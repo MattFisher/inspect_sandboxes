@@ -1581,17 +1581,16 @@ async def test_self_check(modal_sandbox_environment: ModalSandboxEnvironment) ->
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_compose_entrypoint_overrides_image_entrypoint(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_compose_entrypoint_overrides_image_entrypoint(tmp_path: Path) -> None:
     """A Compose entrypoint replaces an inherited image entrypoint on Modal."""
     (tmp_path / "Dockerfile").write_text(
         'FROM busybox:1.36\nENTRYPOINT ["false"]\nCMD ["unused"]\n'
     )
-    monkeypatch.chdir(tmp_path)
     config = ComposeConfig(
         services={
-            "default": ComposeService(build=".", entrypoint=["sleep", "infinity"])
+            "default": ComposeService(
+                build=str(tmp_path), entrypoint=["sleep", "infinity"]
+            )
         }
     )
     sandbox_cleanup_startup()

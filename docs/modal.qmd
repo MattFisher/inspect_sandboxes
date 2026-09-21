@@ -107,7 +107,7 @@ The top-level `x-modal` key on a compose file passes settings to [`modal.Sandbox
 | `unencrypted_ports` | list[int] | `[]` | Ports to tunnel without encryption. |
 | `custom_domain` | str | `None` | Custom subdomain parent for sandbox connections. |
 | `verbose` | bool | `False` | Enable verbose Modal logging. |
-| `experimental_options` | mapping | `None` | Experimental options passed directly to `modal.Sandbox.create()`. Available keys and behavior may change between Modal releases. |
+| `experimental_options` | dict | `None` | Passed through to `modal.Sandbox.create()`. Keys and behavior may change between Modal releases. |
 :::
 
 Mount a runtime payload Volume read-only:
@@ -140,9 +140,7 @@ x-modal:
     vm_runtime: true
 ```
 
-VM Sandboxes have a different resource model and currently do not support
-GPUs. Review Modal's VM Sandbox documentation and limitations before enabling
-this option.
+VM Sandboxes are in beta, use a different resource model, and do not support GPUs.
 
 Unsupported Modal parameters (require SDK objects, not compose-representable): `network_file_systems`, `proxy`.
 

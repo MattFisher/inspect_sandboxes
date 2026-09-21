@@ -9,7 +9,7 @@ import sys
 from contextvars import ContextVar
 from logging import getLogger
 from pathlib import PurePosixPath
-from typing import Any, Literal, Never, cast, overload
+from typing import TYPE_CHECKING, Any, Literal, Never, cast, overload
 
 import modal
 import modal.exception
@@ -32,12 +32,12 @@ from inspect_ai.util._sandbox.environment import (
     PortMapping,
     SandboxConnection,
 )
-from modal.types import FileInfo
 from rich import box, print
 from rich.prompt import Confirm
 from rich.table import Table
 from tenacity import (
     retry,
+    retry_if_exception,
     retry_if_not_exception_type,
     stop_after_attempt,
     wait_exponential,
@@ -47,6 +47,10 @@ from typing_extensions import override
 from inspect_sandboxes._util.naming import make_sandbox_name
 
 from ._compose import _MODAL_PORT_KEYS, convert_compose_to_modal_params
+
+if TYPE_CHECKING:
+    # modal.types only exists from modal 1.5.2; the class is used as an annotation only.
+    from modal.types import FileInfo
 
 logger = getLogger(__name__)
 
@@ -72,14 +76,29 @@ def running_sandboxes() -> list[str]:
 #   is exhausted the error reaches this layer for additional retry.
 # ---------------------------------------------------------------------------
 
+
 # Retry decorator for file I/O and sandbox lifecycle ops.
 # RemoteError indicates permanent server-side failures (e.g. image build errors).
+def _is_permanent_error(exc: BaseException) -> bool:
+    """Errors that must not be retried.
+
+    Modal reports specific filesystem failures (missing path, is a directory,
+    permission denied, ...) as subclasses of SandboxFilesystemError, but wraps
+    transient exec failures in the bare base class, so only subclasses are
+    treated as permanent.
+    """
+    if isinstance(exc, modal.exception.RemoteError):
+        return True
+    return (
+        isinstance(exc, modal.exception.SandboxFilesystemError)
+        and type(exc) is not modal.exception.SandboxFilesystemError
+    )
+
+
 _standard_retry = retry(
     stop=stop_after_attempt(5),
     wait=wait_exponential(multiplier=1, min=1, max=10),
-    retry=retry_if_not_exception_type(
-        (modal.exception.RemoteError, modal.exception.SandboxFilesystemError)
-    ),
+    retry=retry_if_exception(lambda exc: not _is_permanent_error(exc)),
     reraise=True,
 )
 

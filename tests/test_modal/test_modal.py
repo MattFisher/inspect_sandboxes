@@ -1233,6 +1233,41 @@ async def test_relative_file_path_uses_sandbox_working_directory(
 
 
 @pytest.mark.asyncio
+async def test_relative_file_path_resolved_via_pwd_once(
+    sandbox_env: ModalSandboxEnvironment,
+) -> None:
+    """Without a configured workdir, the sandbox's pwd is queried and cached."""
+    filesystem = _mock_filesystem(sandbox_env)
+    pwd = ExecResult(success=True, returncode=0, stdout="/home/user\n", stderr="")
+
+    with patch.object(sandbox_env, "exec", AsyncMock(return_value=pwd)) as exec_mock:
+        await sandbox_env.write_file("a.txt", "a")
+        await sandbox_env.write_file("b.txt", "b")
+
+    exec_mock.assert_awaited_once_with(["pwd"])
+    filesystem.write_text.aio.assert_has_awaits(
+        [call("a", "/home/user/a.txt"), call("b", "/home/user/b.txt")]
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "pwd",
+    [
+        ExecResult(success=False, returncode=1, stdout="", stderr="boom"),
+        ExecResult(success=True, returncode=0, stdout="relative\n", stderr=""),
+    ],
+)
+async def test_relative_file_path_pwd_failure_raises(
+    sandbox_env: ModalSandboxEnvironment, pwd: ExecResult[str]
+) -> None:
+    """A failed or non-absolute pwd answer is an error, not a silent guess."""
+    with patch.object(sandbox_env, "exec", AsyncMock(return_value=pwd)):
+        with pytest.raises(RuntimeError, match="working directory"):
+            await sandbox_env.read_file("a.txt")
+
+
+@pytest.mark.asyncio
 async def test_missing_file_translates_modal_error_without_retry(
     sandbox_env: ModalSandboxEnvironment,
 ) -> None:
@@ -1472,8 +1507,9 @@ async def test_read_file_retries_transient_error(
     info.is_dir.return_value = False
     info.size = 7
     filesystem.stat.aio.return_value = info
+    # Modal wraps transient exec failures in the bare SandboxFilesystemError.
     filesystem.read_bytes.aio.side_effect = [
-        modal.exception.InternalError("transient"),
+        modal.exception.SandboxFilesystemError("An unexpected error occurred"),
         b"content",
     ]
 
